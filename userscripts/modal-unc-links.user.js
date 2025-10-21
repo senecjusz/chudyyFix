@@ -7,8 +7,9 @@
 // @run-at       document-idle
 // @grant        GM_setClipboard
 // @grant        GM_addStyle
-// @updateURL    https://git.ts.archax.eu/veloadmingitea/chudyyFix/raw/branch/main/userscripts/modal-unc-links.user.js
-// @downloadURL  https://git.ts.archax.eu/veloadmingitea/chudyyFix/raw/branch/main/userscripts/modal-unc-links.user.js
+// @updateURL   https://raw.githubusercontent.com/senecjusz/chudyyFix/main/userscripts/modal-unc-links.user.js
+// @downloadURL https://raw.githubusercontent.com/senecjusz/chudyyFix/main/userscripts/modal-unc-links.user.js
+
 // ==/UserScript==
 
 (async () => {
