@@ -6,8 +6,9 @@
 // @match        *://*/*
 // @run-at       document-start
 // @grant        none
-// @updateURL    https://git.ts.archax.eu/veloadmingitea/chudyyFix/raw/branch/main/userscripts/chudyyFix.user.js
-// @downloadURL  https://git.ts.archax.eu/veloadmingitea/chudyyFix/raw/branch/main/userscripts/chudyyFix.user.js
+// @updateURL   https://raw.githubusercontent.com/senecjusz/chudyyFix/main/userscripts/chudyyFix.user.js
+// @downloadURL https://raw.githubusercontent.com/senecjusz/chudyyFix/main/userscripts/chudyyFix.user.js
+
 // ==/UserScript==
 
 (async () => {
