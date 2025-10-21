@@ -7,8 +7,9 @@
 // @run-at       document-idle
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
-// @updateURL    https://git.ts.archax.eu/veloadmingitea/chudyyFix/raw/branch/main/userscripts/mark-reviewed-documents.user.js
-// @downloadURL  https://git.ts.archax.eu/veloadmingitea/chudyyFix/raw/branch/main/userscripts/mark-reviewed-documents.user.js
+// @updateURL   https://raw.githubusercontent.com/senecjusz/chudyyFix/main/userscripts/mark-reviewed-documents.user.js
+// @downloadURL https://raw.githubusercontent.com/senecjusz/chudyyFix/main/userscripts/mark-reviewed-documents.user.js
+
 // ==/UserScript==
 
 (async () => {
