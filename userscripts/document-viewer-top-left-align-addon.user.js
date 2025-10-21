@@ -6,8 +6,8 @@
 // @match        *://*/*
 // @run-at       document-idle
 // @grant        none
-// @updateURL    https://git.ts.archax.eu/veloadmingitea/chudyyFix/raw/branch/main/userscripts/document-viewer-top-left-align-addon.user.js
-// @downloadURL  https://git.ts.archax.eu/veloadmingitea/chudyyFix/raw/branch/main/userscripts/document-viewer-top-left-align-addon.user.js
+// @updateURL   https://raw.githubusercontent.com/senecjusz/chudyyFix/main/userscripts/document-viewer-top-left-align-addon.user.js
+// @downloadURL https://raw.githubusercontent.com/senecjusz/chudyyFix/main/userscripts/document-viewer-top-left-align-addon.user.js
 // ==/UserScript==
 
 (async () => {
