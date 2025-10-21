@@ -6,8 +6,9 @@
 // @match        *://*/*
 // @run-at       document-idle
 // @grant        none
-// @updateURL    https://git.ts.archax.eu/veloadmingitea/chudyyFix/raw/branch/main/userscripts/document-viewer-merged-zoom.user.js
-// @downloadURL  https://git.ts.archax.eu/veloadmingitea/chudyyFix/raw/branch/main/userscripts/document-viewer-merged-zoom.user.js
+// @updateURL   https://raw.githubusercontent.com/senecjusz/chudyyFix/main/userscripts/document-viewer-merged-zoom.user.js
+// @downloadURL https://raw.githubusercontent.com/senecjusz/chudyyFix/main/userscripts/document-viewer-merged-zoom.user.js
+
 // ==/UserScript==
 
 (async () => {
