@@ -1,15 +1,15 @@
 // ==UserScript==
 // @name         chudyyFix — Minimal Menu + SearchOnEnter + MarkReviewed
-// @namespace    chudyfix
-// @version      0.3.0
+// @namespace    chudyyFix
+// @version      0.3.1
 // @description  Settings panel + hashed-URL guard; Search on Enter (when modal not active) + Mark reviewed documents (toggle).
 // @match        *://*/*
 // @run-at       document-idle
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
-// @grant        none
-// @updateURL   https://raw.githubusercontent.com/senecjusz/chudyyFix/main/userscripts/allfixes.js.user.js
-// @downloadURL https://raw.githubusercontent.com/senecjusz/chudyyFix/main/userscripts/allfixes.js.user.js
+// @updateURL    https://raw.githubusercontent.com/senecjusz/chudyyFix/main/userscripts/allfixes.js.user.js
+// @downloadURL  https://raw.githubusercontent.com/senecjusz/chudyyFix/main/userscripts/allfixes.js.user.js
+// ==/UserScript==
 
 (function () {
   "use strict";
