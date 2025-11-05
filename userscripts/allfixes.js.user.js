@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         chudyyFix — all-in-one
 // @namespace    chudyyFix
-// @version      0.4.1
+// @version      0.4.2
 // @description  Panel/opcje, skróty, style itd. + Document Viewer merged zoom/overlay (hashed URL guard)
 // @match        *://*/*
 // @run-at       document-idle
