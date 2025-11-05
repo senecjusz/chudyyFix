@@ -144,8 +144,26 @@
     .cf-actions{display:flex;gap:8px;justify-content:flex-end;padding:12px;border-top:1px solid #374151}
     .cf-btn{padding:6px 10px;border-radius:8px;border:1px solid #4b5563;background:#374151;color:#fff;cursor:pointer}
     .cf-btn.primary{background:#2563eb;border-color:#1d4ed8}
+    .cf-btn.subtle{background:#334155;border-color:#475569}
     .cf-help{opacity:.8;font-size:12px}
     .cf-row .stack{display:flex;gap:8px;align-items:center}
+
+    /* Import overlay */
+    .cf-import-overlay{
+      position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2147483001;display:none;
+      align-items:center;justify-content:center;padding:16px;
+    }
+    .cf-import-overlay.open{display:flex}
+    .cf-import-card{
+      width:min(640px,92vw);max-height:min(80vh,720px);background:#111827;color:#e5e7eb;border-radius:12px;
+      box-shadow:0 12px 30px rgba(0,0,0,.5);display:flex;flex-direction:column;
+    }
+    .cf-import-card h3{margin:0;padding:12px 14px;border-bottom:1px solid #374151}
+    .cf-import-card textarea{
+      flex:1; margin:12px; padding:10px; background:#0b1220; color:#e5e7eb; border:1px solid #374151; border-radius:8px;
+      font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+    }
+    .cf-import-actions{display:flex;gap:8px;justify-content:flex-end; padding:12px; border-top:1px solid #374151}
   `);
 
   const gear = document.createElement("div");
@@ -193,25 +211,85 @@
       </div>
     </div>
     <div class="cf-actions">
+      <button class="cf-btn subtle" id="cf-export">Export JSON</button>
+      <button class="cf-btn subtle" id="cf-import">Import JSON</button>
+      <span style="flex:1"></span>
       <button class="cf-btn" id="cf-cancel">Cancel</button>
       <button class="cf-btn primary" id="cf-save">Save</button>
     </div>
   `;
   document.body.appendChild(panel);
 
-  function openPanel() {
+  // Import overlay (lazy-initialized)
+  let importOverlay = null;
+  function ensureImportOverlay() {
+    if (importOverlay) return importOverlay;
+    const ov = document.createElement("div");
+    ov.className = "cf-import-overlay";
+    ov.innerHTML = `
+      <div class="cf-import-card">
+        <h3>Import settings (paste JSON)</h3>
+        <textarea placeholder='Paste JSON here...'></textarea>
+        <div class="cf-import-actions">
+          <button class="cf-btn" data-act="cancel">Cancel</button>
+          <button class="cf-btn primary" data-act="import">Import</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+
+    const ta = ov.querySelector("textarea");
+    const btnCancel = ov.querySelector('[data-act="cancel"]');
+    const btnImport = ov.querySelector('[data-act="import"]');
+
+    function close(){ ov.classList.remove("open"); }
+    function open(){ ta.value = ""; ov.classList.add("open"); setTimeout(()=>ta.focus(),0); }
+
+    btnCancel.addEventListener("click", close);
+    ov.addEventListener("click", (e)=>{ if (e.target === ov) close(); });
+    btnImport.addEventListener("click", () => {
+      const txt = ta.value.trim();
+      if (!txt) { alert("Nothing to import."); return; }
+      try {
+        const parsed = JSON.parse(txt);
+        // merge parsed -> DEFAULTS for safety, then assign to SETTINGS
+        SETTINGS = merge(DEFAULTS, parsed);
+        saveSettings(SETTINGS);
+        // push zoom immediately to sessionStorage so your module sees it
+        const pct = Math.min(100, Math.max(10, parseInt(SETTINGS.modules?.dvMergedZoomPercent ?? 40, 10)));
+        try { sessionStorage.setItem("docViewerScale", String(pct/100)); } catch {}
+        refreshPanelFromSettings();
+        close();
+        alert("Settings imported. Panel updated.\nIf some features read settings only on boot, reload the page.");
+      } catch {
+        alert("Invalid JSON. Import aborted.");
+      }
+    });
+
+    importOverlay = { root: ov, open, close };
+    return importOverlay;
+  }
+
+  function refreshPanelFromSettings() {
     panel.querySelector("#cf-soe").checked = !!SETTINGS.modules.searchOnEnter;
     panel.querySelector("#cf-mr").checked  = !!SETTINGS.modules.markReviewed;
     panel.querySelector("#cf-dv-on").checked = !!SETTINGS.modules.dvMergedZoom;
     panel.querySelector("#cf-dv-scale").value = String(
       Math.min(100, Math.max(10, parseInt(SETTINGS.modules.dvMergedZoomPercent||40,10)))
     );
+  }
+
+  function openPanel() {
+    refreshPanelFromSettings();
     panel.classList.add("open");
     overlay.classList.add("open");
+    // hide gear while panel is open
+    gear.style.display = "none";
   }
   function closePanel() {
     panel.classList.remove("open");
     overlay.classList.remove("open");
+    // restore gear
+    gear.style.display = "";
   }
 
   gear.addEventListener("click", () => panel.classList.contains("open") ? closePanel() : openPanel());
@@ -220,12 +298,34 @@
   overlay.addEventListener("click", closePanel);
   window.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
 
+  // Export / Import buttons in-panel
+  panel.querySelector("#cf-export").addEventListener("click", async () => {
+    const pretty = JSON.stringify(SETTINGS, null, 2);
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(pretty);
+      else { /* fallback */ prompt("Copy settings JSON:", pretty); }
+      // refresh fields (so user always sees persisted view)
+      refreshPanelFromSettings();
+      alert("Settings JSON copied to clipboard.");
+    } catch {
+      prompt("Copy settings JSON:", pretty);
+      refreshPanelFromSettings();
+    }
+  });
+
+  panel.querySelector("#cf-import").addEventListener("click", () => {
+    ensureImportOverlay().open();
+  });
+
   panel.querySelector("#cf-save").addEventListener("click", () => {
     SETTINGS.modules.searchOnEnter = panel.querySelector("#cf-soe").checked;
     SETTINGS.modules.markReviewed  = panel.querySelector("#cf-mr").checked;
     SETTINGS.modules.dvMergedZoom  = panel.querySelector("#cf-dv-on").checked;
     SETTINGS.modules.dvMergedZoomPercent = parseInt(panel.querySelector("#cf-dv-scale").value,10) || 40;
     saveSettings(SETTINGS);
+    // push zoom immediately to sessionStorage so your module sees it
+    const pct = Math.min(100, Math.max(10, parseInt(SETTINGS.modules.dvMergedZoomPercent||40,10)));
+    try { sessionStorage.setItem("docViewerScale", String(pct/100)); } catch {}
     closePanel();
     alert("Settings saved.");
   });
@@ -243,6 +343,9 @@
     GM_registerMenuCommand("Reset to defaults", () => {
       SETTINGS = structuredClone(DEFAULTS);
       saveSettings(SETTINGS);
+      // update session zoom too
+      const pct = Math.min(100, Math.max(10, parseInt(SETTINGS.modules.dvMergedZoomPercent||40,10)));
+      try { sessionStorage.setItem("docViewerScale", String(pct/100)); } catch {}
       alert("Defaults restored.");
     });
     GM_registerMenuCommand("Guard: trust current URL", trustCurrent);
@@ -402,10 +505,11 @@
         layer.style.width  = w + "px";
         layer.style.height = h + "px";
 
-        sizer.style.width  = Math.max(1, Math.round(w * scale)) + "px";
-        sizer.style.height = Math.max(1, Math.round(h * scale)) + "px";
+        const s = scale;
+        sizer.style.width  = Math.max(1, Math.round(w * s)) + "px";
+        sizer.style.height = Math.max(1, Math.round(h * s)) + "px";
 
-        layer.style.transform = `scale(${scale})`;
+        layer.style.transform = `scale(${s})`;
         nudgeTop(viewer);
       }
 
