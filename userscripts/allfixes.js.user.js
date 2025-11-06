@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         chudyyFix — all-in-one
-// @namespace    chudyyFix
-// @version      0.5.0
-// @description  Panel/opcje, skróty, style itd. + Document Viewer (zoom overlay) + new modal layout (side cols + topbar + scroll lock) with "Document viewer old layout" option.
+// @namespace    chudyFix
+// @version      0.5.2
+// @description  Panel/options, shortcuts, styles. Includes: Search-on-Enter, Mark reviewed, Document Viewer merged-zoom, NEW modal layout (side cols + topbar + scroll lock). Also adds: inverted 'old layout' checkbox semantics, Thumb max height (px), Hide labels under thumbnails.
 // @match        *://*/*
 // @run-at       document-idle
 // @grant        GM_addStyle
@@ -20,18 +20,25 @@
 
   // ===== SETTINGS (cookie with LS fallback) =====
   const DEFAULTS = {
-    ver: 5,
+    ver: 6,
     ui: { corner: "br", size: 36 },
     modules: {
-      // existing
       searchOnEnter: true,
-      markReviewed:   true,
-      dvMergedZoom:   true,
+      markReviewed: true,
+
+      // merged zoom overlay
+      dvMergedZoom: true,
       dvMergedZoomPercent: 40, // 10..100
-      // new
-      dvOldLayout: false,      // when true -> do NOT load new modal layout
+
+      // legacy flag used for gating (storage keeps "old layout" flag)
+      // UI checkbox is inverted: checked => NEW layout ON (we store dvOldLayout = false)
+      dvOldLayout: false,
+
+      // new options from patch
+      dvThumbMaxHeightPx: 150,  // px
+      dvHideThumbLabels:  true  // hide labels under thumbnails
     },
-    // allowed hex list seeded with your working hash
+    // allowlist hashes (URL guard)
     allowedHashes: [
       "df9c64cf96e0a7d2389edee1b0df09992ed09d171d99431de4cb102b099a1510",
     ],
@@ -96,7 +103,7 @@
       const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
       return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,"0")).join("");
     } catch {
-      // fallback (non-crypto)
+      // fallback djb2
       let h = 5381;
       for (let i = 0; i < s.length; i++) h = ((h<<5)+h) ^ s.charCodeAt(i);
       return "djb2_" + (h>>>0).toString(16);
@@ -124,6 +131,34 @@
     alert("Trusted list cleared.");
   }
 
+  // ===== GLOBAL CSS for patch options =====
+  function applyThumbMaxHeight(px) {
+    const v = Math.max(40, Math.min(400, parseInt(px, 10) || 150)) + "px";
+    document.documentElement.style.setProperty("--mt-thumb-maxh", v);
+  }
+  function applyHideThumbLabels(on) {
+    document.documentElement.classList.toggle("cf-hide-thumb-labels", !!on);
+  }
+
+  GM_addStyle(`
+    /* limit thumbnail height via CSS var */
+    #documentModal .mt-thumb img{
+      max-height: var(--mt-thumb-maxh, 150px) !important;
+      max-width: 100% !important;
+      width: auto !important;
+      height: auto !important;
+      object-fit: contain !important;
+      display: block !important;
+    }
+    /* optional: hide text labels under thumbnails */
+    .cf-hide-thumb-labels #documentModal .mt-thumb { gap: 0 !important; }
+    .cf-hide-thumb-labels #documentModal .mt-thumb .lbl { display: none !important; }
+  `);
+
+  // initial apply
+  applyThumbMaxHeight(SETTINGS.modules.dvThumbMaxHeightPx);
+  applyHideThumbLabels(SETTINGS.modules.dvHideThumbLabels);
+
   // ===== UI: gear + panel =====
   GM_addStyle(`
     .cf-gear{position:fixed;z-index:2147483000;width:${SETTINGS.ui.size}px;height:${SETTINGS.ui.size}px;border-radius:50%;
@@ -147,24 +182,6 @@
     .cf-btn{padding:6px 10px;border-radius:8px;border:1px solid #4b5563;background:#374151;color:#fff;cursor:pointer}
     .cf-btn.primary{background:#2563eb;border-color:#1d4ed8}
     .cf-btn.subtle{background:#334155;border-color:#475569}
-    .cf-help{opacity:.8;font-size:12px}
-    .cf-row .stack{display:flex;gap:8px;align-items:center}
-
-    .cf-import-overlay{
-      position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2147483001;display:none;
-      align-items:center;justify-content:center;padding:16px;
-    }
-    .cf-import-overlay.open{display:flex}
-    .cf-import-card{
-      width:min(640px,92vw);max-height:min(80vh,720px);background:#111827;color:#e5e7eb;border-radius:12px;
-      box-shadow:0 12px 30px rgba(0,0,0,.5);display:flex;flex-direction:column;
-    }
-    .cf-import-card h3{margin:0;padding:12px 14px;border-bottom:1px solid #374151}
-    .cf-import-card textarea{
-      flex:1; margin:12px; padding:10px; background:#0b1220; color:#e5e7eb; border:1px solid #374151; border-radius:8px;
-      font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
-    }
-    .cf-import-actions{display:flex;gap:8px;justify-content:flex-end; padding:12px; border-top:1px solid #374151}
   `);
 
   const gear = document.createElement("div");
@@ -215,10 +232,17 @@
         <label for="cf-dv-old">Document viewer old layout</label>
         <input type="checkbox" id="cf-dv-old">
       </div>
+
       <div class="cf-row">
-        <div class="cf-help" style="grid-column: 1 / -1;">
-          If enabled, the legacy layout is kept. New modal layout (side columns, topbar with Close on the right, background scroll lock) is disabled.
+        <label for="cf-thumbmaxh">Thumb max height (px)</label>
+        <div class="stack">
+          <input type="number" id="cf-thumbmaxh" min="40" max="400" step="10" style="width:120px">
         </div>
+      </div>
+
+      <div class="cf-row">
+        <label for="cf-dv-hide-labels">Hide file names under thumbnails</label>
+        <input type="checkbox" id="cf-dv-hide-labels">
       </div>
     </div>
     <div class="cf-actions">
@@ -231,53 +255,6 @@
   `;
   document.body.appendChild(panel);
 
-  // Import overlay (lazy)
-  let importOverlay = null;
-  function ensureImportOverlay() {
-    if (importOverlay) return importOverlay;
-    const ov = document.createElement("div");
-    ov.className = "cf-import-overlay";
-    ov.innerHTML = `
-      <div class="cf-import-card">
-        <h3>Import settings (paste JSON)</h3>
-        <textarea placeholder='Paste JSON here...'></textarea>
-        <div class="cf-import-actions">
-          <button class="cf-btn" data-act="cancel">Cancel</button>
-          <button class="cf-btn primary" data-act="import">Import</button>
-        </div>
-      </div>`;
-    document.body.appendChild(ov);
-
-    const ta = ov.querySelector("textarea");
-    const btnCancel = ov.querySelector('[data-act="cancel"]');
-    const btnImport = ov.querySelector('[data-act="import"]');
-
-    function close(){ ov.classList.remove("open"); }
-    function open(){ ta.value = ""; ov.classList.add("open"); setTimeout(()=>ta.focus(),0); }
-
-    btnCancel.addEventListener("click", close);
-    ov.addEventListener("click", (e)=>{ if (e.target === ov) close(); });
-    btnImport.addEventListener("click", () => {
-      const txt = ta.value.trim();
-      if (!txt) { alert("Nothing to import."); return; }
-      try {
-        const parsed = JSON.parse(txt);
-        SETTINGS = merge(DEFAULTS, parsed);
-        saveSettings(SETTINGS);
-        const pct = Math.min(100, Math.max(10, parseInt(SETTINGS.modules?.dvMergedZoomPercent ?? 40, 10)));
-        try { sessionStorage.setItem("docViewerScale", String(pct/100)); } catch {}
-        refreshPanelFromSettings();
-        close();
-        alert("Settings imported. Some features may require page reload.");
-      } catch {
-        alert("Invalid JSON. Import aborted.");
-      }
-    });
-
-    importOverlay = { root: ov, open, close };
-    return importOverlay;
-  }
-
   function refreshPanelFromSettings() {
     panel.querySelector("#cf-soe").checked     = !!SETTINGS.modules.searchOnEnter;
     panel.querySelector("#cf-mr").checked      = !!SETTINGS.modules.markReviewed;
@@ -285,7 +262,12 @@
     panel.querySelector("#cf-dv-scale").value  = String(
       Math.min(100, Math.max(10, parseInt(SETTINGS.modules.dvMergedZoomPercent||40,10)))
     );
-    panel.querySelector("#cf-dv-old").checked  = !!SETTINGS.modules.dvOldLayout;
+
+    // inverted UI semantics: checked => NEW layout ON
+    panel.querySelector("#cf-dv-old").checked = !SETTINGS.modules.dvOldLayout;
+
+    panel.querySelector("#cf-thumbmaxh").value = String(SETTINGS.modules.dvThumbMaxHeightPx ?? 150);
+    panel.querySelector("#cf-dv-hide-labels").checked = !!SETTINGS.modules.dvHideThumbLabels;
   }
 
   function openPanel() {
@@ -319,24 +301,48 @@
       refreshPanelFromSettings();
     }
   });
+
   panel.querySelector("#cf-import").addEventListener("click", () => {
-    ensureImportOverlay().open();
+    const txt = prompt("Paste settings JSON:");
+    if (!txt) return;
+    try {
+      const parsed = JSON.parse(txt);
+      SETTINGS = merge(DEFAULTS, parsed);
+      saveSettings(SETTINGS);
+      applyThumbMaxHeight(SETTINGS.modules.dvThumbMaxHeightPx);
+      applyHideThumbLabels(SETTINGS.modules.dvHideThumbLabels);
+      refreshPanelFromSettings();
+      alert("Settings imported. Some features may require page reload.");
+    } catch {
+      alert("Invalid JSON. Import aborted.");
+    }
   });
+
   panel.querySelector("#cf-save").addEventListener("click", () => {
     SETTINGS.modules.searchOnEnter       = panel.querySelector("#cf-soe").checked;
     SETTINGS.modules.markReviewed        = panel.querySelector("#cf-mr").checked;
     SETTINGS.modules.dvMergedZoom        = panel.querySelector("#cf-dv-on").checked;
     SETTINGS.modules.dvMergedZoomPercent = parseInt(panel.querySelector("#cf-dv-scale").value,10) || 40;
-    SETTINGS.modules.dvOldLayout         = panel.querySelector("#cf-dv-old").checked;
+
+    // inverted semantics for storage:
+    const uiNewOn = panel.querySelector("#cf-dv-old").checked; // CHECKED = new layout ON
+    SETTINGS.modules.dvOldLayout = !uiNewOn; // store old layout flag
+
+    const thumbH = Math.max(40, Math.min(400, parseInt(panel.querySelector("#cf-thumbmaxh").value || "150", 10) || 150));
+    SETTINGS.modules.dvThumbMaxHeightPx = thumbH;
+
+    const hideLbl = panel.querySelector("#cf-dv-hide-labels").checked;
+    SETTINGS.modules.dvHideThumbLabels = hideLbl;
+
     saveSettings(SETTINGS);
-    const pct = Math.min(100, Math.max(10, parseInt(SETTINGS.modules.dvMergedZoomPercent||40,10)));
-    try { sessionStorage.setItem("docViewerScale", String(pct/100)); } catch {}
+
+    // live apply
+    applyThumbMaxHeight(thumbH);
+    applyHideThumbLabels(hideLbl);
+
     closePanel();
     alert("Settings saved. Some changes may require page reload.");
   });
-
-  gear.classList.remove("tl","tr","bl","br");
-  gear.classList.add(SETTINGS.ui.corner);
 
   // ===== TM menu =====
   if (typeof GM_registerMenuCommand === "function") {
@@ -348,8 +354,8 @@
     GM_registerMenuCommand("Reset to defaults", () => {
       SETTINGS = structuredClone(DEFAULTS);
       saveSettings(SETTINGS);
-      const pct = Math.min(100, Math.max(10, parseInt(SETTINGS.modules.dvMergedZoomPercent||40,10)));
-      try { sessionStorage.setItem("docViewerScale", String(pct/100)); } catch {}
+      applyThumbMaxHeight(SETTINGS.modules.dvThumbMaxHeightPx);
+      applyHideThumbLabels(SETTINGS.modules.dvHideThumbLabels);
       alert("Defaults restored.");
     });
     GM_registerMenuCommand("Guard: trust current URL", trustCurrent);
@@ -360,12 +366,107 @@
     });
   }
 
-  // ===== Feature: Document Viewer merged zoom (existing module, gated) =====
+  // ===== Feature: Search on Enter =====
+  if (SETTINGS.modules.searchOnEnter) {
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter") return;
+      const modal = document.querySelector("#documentModal");
+      const modalActive = !!(modal && modal.classList.contains("active"));
+      if (!modalActive) {
+        e.preventDefault();
+        if (typeof window.search === "function") { window.search(); return; }
+        const btn = document.querySelector('button[onclick="search()"]');
+        if (btn) btn.click();
+      }
+    }, true);
+  }
+
+  // ===== Feature: Mark reviewed documents =====
+  if (SETTINGS.modules.markReviewed) {
+    const COLOR_RGB = [128,128,128], BADGE_ALPHA = 0.85, OUTLINE_PX = 2, IMG_OPACITY = 0.95, IMG_SATURATE = 0.9, BADGE_TEXT = "✓ viewed";
+    GM_addStyle(`
+      .document-card { position: relative; }
+      .document-card.tm-reviewed { outline: ${OUTLINE_PX}px solid rgb(${COLOR_RGB.join(",")}); border-radius: 8px; }
+      .document-card.tm-reviewed .document-preview img { opacity: ${IMG_OPACITY}; filter: saturate(${IMG_SATURATE}); }
+      .document-card .tm-reviewed-badge { position: absolute; top: 6px; left: 6px; font: 700 12px/1 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+        background: rgba(${COLOR_RGB.join(",")}, ${BADGE_ALPHA}); color: #fff; padding: 2px 6px; border-radius: 9999px; box-shadow: 0 1px 2px rgba(0,0,0,.15); z-index: 100; pointer-events: none; }
+    `);
+
+    const STORAGE_KEY = "tm_viewed_docs_v1";
+    const loadSet = () => { try { return new Set(JSON.parse(localStorage.getItem(STORAGE_KEY)||"[]")); } catch { return new Set(); } };
+    const saveSet = (s) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify([...s])); } catch {} };
+    let viewed = loadSet();
+
+    function getDocIdFromCard(card) {
+      const preview = card.querySelector(".document-preview");
+      const hash = preview?.dataset?.hash || preview?.getAttribute("data-hash");
+      if (hash) return `hash:${hash}`;
+      const pathEl = card.querySelector(".document-info .document-path");
+      const path = pathEl?.getAttribute("title") || pathEl?.textContent?.trim();
+      if (path) return `path:${path}`;
+      const pid = preview?.id;
+      if (pid) return `id:${pid}`;
+      return null;
+    }
+    function applyMark(card, on) {
+      if (!card) return;
+      if (on) {
+        if (!card.classList.contains("tm-reviewed")) {
+          card.classList.add("tm-reviewed");
+          let badge = card.querySelector(".tm-reviewed-badge");
+          if (!badge) {
+            badge = document.createElement("div");
+            badge.className = "tm-reviewed-badge";
+            badge.textContent = BADGE_TEXT;
+            card.appendChild(badge);
+          } else {
+            badge.textContent = BADGE_TEXT;
+          }
+        }
+      } else {
+        card.classList.remove("tm-reviewed");
+        card.querySelector(".tm-reviewed-badge")?.remove();
+      }
+    }
+    function syncAll(root=document) {
+      root.querySelectorAll(".document-card").forEach(card => {
+        const id = getDocIdFromCard(card);
+        applyMark(card, id && viewed.has(id));
+      });
+    }
+    function markCard(card) {
+      const id = getDocIdFromCard(card);
+      if (!id) return;
+      if (!viewed.has(id)) {
+        viewed.add(id);
+        saveSet(viewed);
+      }
+      applyMark(card, true);
+    }
+    document.addEventListener("click", (ev) => {
+      const preview = ev.target.closest(".document-card .document-preview");
+      if (!preview) return;
+      const card = preview.closest(".document-card");
+      if (!card) return;
+      markCard(card);
+    }, { capture: true });
+    const mo = new MutationObserver(muts => {
+      for (const m of muts) for (const n of m.addedNodes) {
+        if (!(n instanceof HTMLElement)) continue;
+        if (n.matches?.(".document-card")) syncAll(n);
+        else n.querySelectorAll?.(".document-card").forEach(c => syncAll(c));
+      }
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+    syncAll();
+  }
+
+  // ===== Feature: Document Viewer merged zoom overlay =====
   function cfInitDvMergedZoomOverlay() {
     if (window.__cfDvMergedZoomBooted) return;
     window.__cfDvMergedZoomBooted = true;
 
-    // NOTE: comments without diacritics by request
+    // NOTE: comments without diacritics
     const VIEWER_SEL    = ".document-viewer";
     const IMG_SEL       = "#documentImage";
     const OVERLAY_SELS  = [
@@ -507,7 +608,7 @@
       layer.style.width  = w + "px";
       layer.style.height = h + "px";
 
-      const s = scale;
+      const s = readScale();
       sizer.style.width  = Math.max(1, Math.round(w * s)) + "px";
       sizer.style.height = Math.max(1, Math.round(h * s)) + "px";
 
@@ -563,7 +664,6 @@
     if (window.__cfDocModalLayoutBooted) return;
     window.__cfDocModalLayoutBooted = true;
 
-    // --- Selectors (same as M3-fix base) ---
     const SEL = {
       modal:   "#documentModal",
       content: "#documentModal .modal-content",
@@ -579,16 +679,13 @@
       navCache:"#documentModal .mt-nav-cache"
     };
 
-    // --- CSS (layout + right-aligned Close + scroll-chain containment) ---
     GM_addStyle(`
       :root { --mt-col-w: 180px; }
 
-      /* prevent scroll chaining inside modal */
       #documentModal, #documentModal .modal-content, #documentModal .modal-body, #documentModal .document-viewer{
         overscroll-behavior: contain !important;
       }
 
-      /* page scroll lock helper when modal active */
       html.mt-scroll-locked, body.mt-scroll-locked{
         overflow: hidden !important;
       }
@@ -600,7 +697,6 @@
       }
       #documentModal .modal-header{ display:none !important; }
 
-      /* 3-col grid: left | center | right */
       #documentModal .modal-body{
         position:relative !important;
         display:grid !important;
@@ -615,17 +711,15 @@
         grid-row: 1 / 2 !important;
         height:100% !important; width:100% !important;
         overflow:auto !important; text-align:left !important;
-        position:relative !important; /* anchor for absolute topbar */
+        position:relative !important;
       }
 
-      /* Arrows pinned to center column edges */
       #documentModal .modal-body .nav-arrow{
         position:absolute !important; top:50% !important; transform:translateY(-50%) !important; z-index:1000 !important;
       }
       #documentModal .modal-body .nav-arrow.nav-arrow-left{ left: calc(var(--mt-col-w) + 10px) !important; }
       #documentModal .modal-body .nav-arrow.nav-arrow-right{ right: calc(var(--mt-col-w) + 10px) !important; }
 
-      /* Side columns */
       #documentModal .mt-col{
         grid-row: 1 / 2 !important;
         overflow:auto !important;
@@ -638,7 +732,6 @@
       #documentModal .mt-col-left{ grid-column: 1 / 2 !important; }
       #documentModal .mt-col-right{ grid-column: 3 / 4 !important; }
 
-      /* Thumbs */
       #documentModal .mt-thumb{
         display:flex; flex-direction:column; align-items:center; gap:4px;
         border:0; background:transparent; cursor:pointer;
@@ -646,8 +739,8 @@
       }
       #documentModal .mt-thumb:hover{ background: rgba(255,255,255,.08); }
       #documentModal .mt-thumb img{
-        width: 100%; height: auto; display:block; border-radius:4px;
-        object-fit:contain;
+        width: auto; height: auto; display:block; border-radius:4px;
+        object-fit:contain; max-width:100%;
       }
       #documentModal .mt-thumb .lbl{
         font: 11px/1.1 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
@@ -655,14 +748,13 @@
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
       }
 
-      /* Topbar inside .document-viewer: LEFT path, RIGHT close */
       #documentModal .document-viewer .mt-topbar{
         position:absolute !important;
         top:10px !important; left:10px !important; right:10px !important;
         display:flex !important; align-items:center !important; gap:8px !important;
-        justify-content:space-between !important; /* push Close to right edge */
+        justify-content:space-between !important;
         z-index:1050 !important;
-        pointer-events:none !important; /* allow clicks to pass except on Close */
+        pointer-events:none !important;
       }
       #documentModal .document-viewer .mt-chip{
         background:rgba(0,0,0,.5);
@@ -676,9 +768,9 @@
         flex:1 1 auto !important; min-width:0 !important; overflow:hidden !important;
       }
       #documentModal .document-viewer .mt-close{
-        pointer-events:auto !important; /* clickable */
-        flex:0 0 auto !important;       /* keep intrinsic width */
-        margin-left:8px !important;     /* small gap from path chip */
+        pointer-events:auto !important;
+        flex:0 0 auto !important;
+        margin-left:8px !important;
         border:0; cursor:pointer;
         display:flex; align-items:center; gap:6px;
         background:linear-gradient(135deg, #ef4444, #f97316);
@@ -687,7 +779,6 @@
       #documentModal .document-viewer .mt-close:hover{ filter:brightness(1.05); }
       #documentModal .document-viewer .mt-close .x{ font-weight:700; }
 
-      /* Hide bottom thumbnails (soft-hide) */
       #documentModal .navigation-thumbnails{
         display:none !important;
         height:0 !important;
@@ -696,15 +787,12 @@
         border:0 !important;
       }
 
-      /* Hidden cache for #navLinks when needed in future */
       #documentModal .mt-nav-cache{ display:none !important; }
     `);
 
-    // --- Utils
     const qs  = (sel, root=document) => root.querySelector(sel);
     const isActive = (modal) => modal && modal.classList.contains("active");
 
-    // Page scroll lock
     const PageScroll = {
       locked: false,
       lock(){
@@ -721,13 +809,11 @@
       }
     };
 
-    // Stop wheel/touch scrolling outside of the modal when it's active
     function installGlobalGuards(modal){
       const guardWheel = (ev) => {
         if (!isActive(modal)) return;
         if (!modal.contains(ev.target)) {
-          ev.preventDefault();
-          ev.stopPropagation();
+          ev.preventDefault(); ev.stopPropagation();
         }
       };
       const guardTouch = guardWheel;
@@ -735,8 +821,7 @@
         if (!isActive(modal)) return;
         const keys = ["PageUp","PageDown","Home","End","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "];
         if (keys.includes(ev.key) && !modal.contains(ev.target)) {
-          ev.preventDefault();
-          ev.stopPropagation();
+          ev.preventDefault(); ev.stopPropagation();
         }
       };
       document.addEventListener("wheel", guardWheel, { passive:false, capture:true });
@@ -745,7 +830,6 @@
       modal.__mtGuards = { guardWheel, guardTouch, guardKeys };
     }
 
-    // Side columns
     function getNavLinks(modal){
       return qs(SEL.navLinks, modal) || qs("#navLinks", qs(SEL.navCache, modal) || document);
     }
@@ -817,7 +901,6 @@
       }
     }
 
-    // Topbar (left path, right close)
     function measFactory(){
       const cvs = document.createElement("canvas");
       const ctx = cvs.getContext?.("2d");
@@ -854,7 +937,7 @@
       return prefix + full.slice(-lo);
     }
     function ensureTopbar(modal){
-      const viewer = qs(SEL.viewer, modal);
+      const viewer = document.querySelector("#documentModal .modal-body .document-viewer");
       if (!viewer) return;
       if (getComputedStyle(viewer).position === "static"){
         viewer.style.position = "relative";
@@ -877,7 +960,7 @@
         closeBtn.className = "mt-chip mt-close";
         closeBtn.innerHTML = `<span class="x">×</span><span>Close</span>`;
         closeBtn.addEventListener("click", () => {
-          const modalEl = qs(SEL.modal);
+          const modalEl = document.querySelector("#documentModal");
           try { if (typeof window.closeModal === "function") return window.closeModal(); } catch {}
           modalEl?.classList.remove("active");
         });
@@ -886,7 +969,7 @@
         if (closeBtn !== top.lastElementChild) top.appendChild(closeBtn);
       }
       const applyPath = () => {
-        const full = qs(SEL.pathSpan)?.textContent?.trim() || "";
+        const full = document.querySelector("#documentModal #documentPath")?.textContent?.trim() || "";
         pathChip.title = full || "";
         const shown = trimPathStart(full, pathChip);
         if (pathChip.textContent !== shown) pathChip.textContent = shown;
@@ -894,10 +977,10 @@
       applyPath();
       requestAnimationFrame(applyPath);
       const z = "1000";
-      qs(SEL.left, modal)?.style.setProperty("z-index", z, "important");
-      qs(SEL.right, modal)?.style.setProperty("z-index", z, "important");
+      document.querySelector("#documentModal .modal-body .nav-arrow.nav-arrow-left")?.style.setProperty("z-index", z, "important");
+      document.querySelector("#documentModal .modal-body .nav-arrow.nav-arrow-right")?.style.setProperty("z-index", z, "important");
       if (!modal.__mtPathObserver){
-        const pathSpan = qs(SEL.pathSpan);
+        const pathSpan = document.querySelector("#documentModal #documentPath");
         if (pathSpan){
           const mo = new MutationObserver(applyPath);
           mo.observe(pathSpan, { childList:true, subtree:true, characterData:true });
@@ -907,9 +990,8 @@
       }
     }
 
-    // Hide (soft) bottom nav
     function hideNav(modal){
-      const navWrap = qs(SEL.navWrap, modal);
+      const navWrap = document.querySelector("#documentModal .navigation-thumbnails");
       if (!navWrap) return;
       navWrap.setAttribute("aria-hidden", "true");
       navWrap.style.setProperty("display", "none", "important");
@@ -919,7 +1001,6 @@
       navWrap.style.setProperty("border", "0", "important");
     }
 
-    // Modal hook + scroll lock
     function hookModal(modal){
       if (!modal || modal.__mtHooked) return;
       modal.__mtHooked = true;
@@ -942,132 +1023,37 @@
       onChange();
     }
 
-    // Boot
-    const modal0 = qs(SEL.modal);
+    const modal0 = document.querySelector("#documentModal");
     if (modal0) {
       hookModal(modal0);
     } else {
       const mo = new MutationObserver(() => {
-        const m = qs(SEL.modal);
+        const m = document.querySelector("#documentModal");
         if (m){ hookModal(m); mo.disconnect(); }
       });
       mo.observe(document.body || document.documentElement, { childList:true, subtree:true });
     }
   }
 
-  // ===== Run only on allowed pages =====
+  // ===== Boot only on allowed pages =====
   (async () => {
     if (!(await isAllowed())) {
       console.info("[chudyyFix] URL not allowed. Use TM menu: Guard: trust current URL.");
       return;
     }
 
-    // === Search on Enter (unchanged) ===
-    if (SETTINGS.modules.searchOnEnter) {
-      document.addEventListener("keydown", function (e) {
-        if (e.key !== "Enter") return;
-        const modal = document.querySelector("#documentModal");
-        const modalActive = !!(modal && modal.classList.contains("active"));
-        if (!modalActive) {
-          e.preventDefault();
-          if (typeof window.search === "function") { window.search(); return; }
-          const btn = document.querySelector('button[onclick="search()"]');
-          if (btn) btn.click();
-        }
-      }, true);
-    }
+    // Search on Enter
+    // (already installed above if enabled)
 
-    // === Mark reviewed documents (unchanged) ===
-    if (SETTINGS.modules.markReviewed) {
-      const COLOR_RGB = [128,128,128], BADGE_ALPHA = 0.85, OUTLINE_PX = 2, IMG_OPACITY = 0.95, IMG_SATURATE = 0.9, BADGE_TEXT = "✓ viewed";
-      const css = `
-        .document-card { position: relative; }
-        .document-card.tm-reviewed { outline: ${OUTLINE_PX}px solid rgb(${COLOR_RGB.join(",")}); border-radius: 8px; }
-        .document-card.tm-reviewed .document-preview img { opacity: ${IMG_OPACITY}; filter: saturate(${IMG_SATURATE}); }
-        .document-card .tm-reviewed-badge { position: absolute; top: 6px; left: 6px; font: 700 12px/1 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
-          background: rgba(${COLOR_RGB.join(",")}, ${BADGE_ALPHA}); color: #fff; padding: 2px 6px; border-radius: 9999px; box-shadow: 0 1px 2px rgba(0,0,0,.15); z-index: 100; pointer-events: none; }
-      `;
-      GM_addStyle(css);
-
-      const STORAGE_KEY = "tm_viewed_docs_v1";
-      const loadSet = () => { try { return new Set(JSON.parse(localStorage.getItem(STORAGE_KEY)||"[]")); } catch { return new Set(); } };
-      const saveSet = (s) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify([...s])); } catch {} };
-      let viewed = loadSet();
-
-      function getDocIdFromCard(card) {
-        const preview = card.querySelector(".document-preview");
-        const hash = preview?.dataset?.hash || preview?.getAttribute("data-hash");
-        if (hash) return `hash:${hash}`;
-        const pathEl = card.querySelector(".document-info .document-path");
-        const path = pathEl?.getAttribute("title") || pathEl?.textContent?.trim();
-        if (path) return `path:${path}`;
-        const pid = preview?.id;
-        if (pid) return `id:${pid}`;
-        return null;
-      }
-      function applyMark(card, on) {
-        if (!card) return;
-        if (on) {
-          if (!card.classList.contains("tm-reviewed")) {
-            card.classList.add("tm-reviewed");
-            let badge = card.querySelector(".tm-reviewed-badge");
-            if (!badge) {
-              badge = document.createElement("div");
-              badge.className = "tm-reviewed-badge";
-              badge.textContent = BADGE_TEXT;
-              card.appendChild(badge);
-            } else {
-              badge.textContent = BADGE_TEXT;
-            }
-          }
-        } else {
-          card.classList.remove("tm-reviewed");
-          card.querySelector(".tm-reviewed-badge")?.remove();
-        }
-      }
-      function syncAll(root=document) {
-        root.querySelectorAll(".document-card").forEach(card => {
-          const id = getDocIdFromCard(card);
-          applyMark(card, id && viewed.has(id));
-        });
-      }
-      function markCard(card) {
-        const id = getDocIdFromCard(card);
-        if (!id) return;
-        if (!viewed.has(id)) {
-          viewed.add(id);
-          saveSet(viewed);
-        }
-        applyMark(card, true);
-      }
-      document.addEventListener("click", (ev) => {
-        const preview = ev.target.closest(".document-card .document-preview");
-        if (!preview) return;
-        const card = preview.closest(".document-card");
-        if (!card) return;
-        markCard(card);
-      }, { capture: true });
-      const mo = new MutationObserver(muts => {
-        for (const m of muts) for (const n of m.addedNodes) {
-          if (!(n instanceof HTMLElement)) continue;
-          if (n.matches?.(".document-card")) syncAll(n);
-          else n.querySelectorAll?.(".document-card").forEach(c => syncAll(c));
-        }
-      });
-      mo.observe(document.body, { childList: true, subtree: true });
-      syncAll();
-    }
-
-    // === Document Viewer merged zoom (existing)
+    // Document Viewer merged zoom
     if (SETTINGS.modules.dvMergedZoom) {
       const pct = Math.min(100, Math.max(10, parseInt(SETTINGS.modules.dvMergedZoomPercent||40,10)));
       try { sessionStorage.setItem("docViewerScale", String(pct/100)); } catch {}
-      if (!window.__cfDvMergedZoomBooted) {
-        cfInitDvMergedZoomOverlay();
-      }
+      if (!window.__cfDvMergedZoomBooted) cfInitDvMergedZoomOverlay();
     }
 
-    // === NEW modal layout (only if NOT old layout)
+    // NEW modal layout (gated by inverted UI semantics)
+    // storage uses dvOldLayout=true to mean "legacy"; thus new layout runs when dvOldLayout is false
     if (!SETTINGS.modules.dvOldLayout) {
       cfInitDocumentModalLayout();
     }
