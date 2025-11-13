@@ -1311,7 +1311,26 @@
 
     const items = [];
     if (fileName) items.push({ label: fileName, onClick: () => GM_setClipboard(fileName) });
-    if (imgAbs)   items.push({ label: imgAbs, onClick: () => GM_setClipboard(imgAbs) });
+
+    if (imgAbs) {
+      // 2) direct image url
+      items.push({ label: imgAbs, onClick: () => GM_setClipboard(imgAbs) });
+
+      // 3) extra: viewer url with #doc=<hash>
+      const m = imgAbs.match(/[?&]hash=([^&#]+)/);
+      if (m && m[1]) {
+        const docHash = decodeURIComponent(m[1]);
+
+        // build viewer url from current path (strip file name if any)
+        let basePath = window.location.pathname || '/';
+        basePath = basePath.replace(/[^\/]*$/, '');
+        if (!basePath.endsWith('/')) basePath += '/';
+
+        const viewerUrl = window.location.origin + basePath + '#doc=' + docHash;
+        items.push({ label: viewerUrl, onClick: () => GM_setClipboard(viewerUrl) });
+      }
+    }
+
     if (rel) for (const e of cfg) {
       const link = buildLink(e, rel);
       if (!link) continue;
@@ -1323,7 +1342,11 @@
       const n = document.createElement('div');
       n.className = 'cfx-ln-item';
       n.textContent = it.label;
-      n.addEventListener('click', (ev)=>{ ev.stopPropagation(); try{ it.onClick(); }catch{} hidePortal(); }, {capture:true});
+      n.addEventListener('click', (ev)=>{
+        ev.stopPropagation();
+        try{ it.onClick(); }catch{}
+        hidePortal();
+      }, {capture:true});
       portal.appendChild(n);
     }
 
