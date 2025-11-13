@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         chudyyFix — all-in-one
 // @namespace    chudyFix
-// @version      0.5.2
-// @description  Panel/options, shortcuts, styles. Includes: Search-on-Enter, Mark reviewed, Document Viewer merged-zoom, NEW modal layout (side cols + topbar + scroll lock). Also adds: inverted 'old layout' checkbox semantics, Thumb max height (px), Hide labels under thumbnails.
+// @version      0.5.3
+// @description  Panel/options, shortcuts, styles. Includes: Search-on-Enter, Mark reviewed, Document Viewer merged-zoom, NEW modal layout (side cols + topbar + scroll lock). Also adds: inverted 'old layout' checkbox semantics, Thumb max height (px), Hide labels under thumbnails, links
 // @match        *://*/*
 // @run-at       document-idle
 // @grant        GM_addStyle
@@ -10,6 +10,7 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
+// @grant        GM_setClipboard
 // @updateURL    https://raw.githubusercontent.com/senecjusz/chudyyFix/main/userscripts/allfixes.js.user.js
 // @downloadURL  https://raw.githubusercontent.com/senecjusz/chudyyFix/main/userscripts/allfixes.js.user.js
 // ==/UserScript==
@@ -1058,4 +1059,562 @@
       cfInitDocumentModalLayout();
     }
   })();
+})();
+
+/* ==== cfx-links module: File Links + Links button + single Export/Import + centered dark panel ==== */
+(function () {
+  'use strict';
+  if (window.__CFX_LINKS_INTEGRATED__) return;
+  window.__CFX_LINKS_INTEGRATED__ = true;
+
+  // ---------- CSS (contrast + larger centered panel + links UI) ----------
+  GM_addStyle(`
+    /* Enlarge and center main settings panel */
+    .cf-panel.open {
+      position: fixed !important;
+      top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) !important;
+      width: min(1100px, 96vw) !important;
+      max-height: 88vh !important;
+      z-index: 2147483500 !important;
+      background: #0b1220 !important;
+      color: #e5e7eb !important;
+      border: 1px solid #25314a !important;
+      border-radius: 12px !important;
+      box-shadow: 0 24px 48px rgba(0,0,0,.35) !important;
+    }
+    .cf-panel.open .cf-hd {
+      padding: 12px 14px !important;
+      border-bottom: 1px solid #25314a !important;
+      background: #0e172a !important;
+    }
+    .cf-panel.open .cf-title { color: #e5e7eb !important; font-weight: 600 !important; }
+    .cf-panel.open .cf-bd {
+      padding: 14px !important;
+      max-height: calc(88vh - 120px) !important;
+      overflow: auto !important;
+      background: transparent !important;
+    }
+    .cf-panel.open .cf-row label { color: #e2e8f0 !important; }
+    .cf-panel.open .cf-row input[type="checkbox"],
+    .cf-panel.open .cf-row input[type="number"],
+    .cf-panel.open .cf-row select {
+      background: #0f172a !important;
+      border: 1px solid #334155 !important;
+      color: #e5e7eb !important;
+      border-radius: 8px !important;
+      padding: 6px 8px !important;
+    }
+    .cf-panel.open .cf-actions {
+      border-top: 1px solid #25314a !important;
+      background: #0e172a !important;
+      padding: 12px 14px !important;
+    }
+    .cf-panel.open .cf-btn {
+      background: #111827 !important;
+      color: #e5e7eb !important;
+      border: 1px solid #334155 !important;
+      border-radius: 8px !important;
+    }
+    .cf-panel.open .cf-btn:hover { filter: brightness(1.08) !important; }
+    .cf-panel.open .cf-btn.primary {
+      background: #1d4ed8 !important;
+      border-color: #1d4ed8 !important;
+      color: #fff !important;
+    }
+
+    /* Topbar & Links button */
+    .mt-topbar { position: relative !important; z-index: 10050 !important; pointer-events: auto !important; }
+    .cfx-ln-wrap { position: relative !important; display: inline-flex; gap: 8px; align-items: center; margin-right: 8px; z-index: 10060 !important; pointer-events: auto !important; }
+    .cfx-ln-btn.mt-chip{
+      position: relative !important; z-index: 10070 !important; pointer-events: auto !important;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+      color: #ffffff !important; border: none !important; border-radius: 8px;
+      padding: 0.65rem 1.2rem; cursor: pointer !important;
+      font-size: 0.95rem; font-family: inherit; font-weight: 500; letter-spacing: 0.5px;
+      box-shadow: 0 4px 15px rgba(102,126,234,0.30) !important;
+      transition: transform .25s ease, box-shadow .25s ease, filter .25s ease !important;
+      will-change: transform; line-height: 1.2;
+    }
+    .cfx-ln-btn.mt-chip:hover { transform: translateY(-2px) !important; box-shadow: 0 8px 18px rgba(102,126,234,0.45) !important; filter: brightness(1.03) !important; }
+    .cfx-ln-btn.mt-chip:active { transform: translateY(-1px) !important; }
+    .cfx-ln-btn.mt-chip:focus { outline: none !important; box-shadow: 0 0 0 3px rgba(118,75,162,.25) !important, 0 6px 16px rgba(102,126,234,.40) !important; }
+
+    /* Dropdown */
+    .cfx-ln-portal {
+      position: fixed; z-index: 2147483000;
+      min-width: 260px; max-width: 80vw;
+      background: #0b1220; color: #e5e7eb;
+      border: 1px solid #334155; border-radius: 8px;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.35);
+      overflow: hidden; display: none;
+    }
+    .cfx-ln-portal.show { display: block; }
+    .cfx-ln-item { padding: 9px 12px; font-size: 13px; white-space: nowrap; cursor: pointer; transition: background-color .15s ease; }
+    .cfx-ln-item:hover { background: #111827; }
+
+    /* File Links section (high contrast) */
+    #cfx-links-settings.cfx-ln-embed {
+      margin: 12px 0; padding: 12px;
+      border: 1px solid #334155; border-radius: 10px;
+      background:#0f172a; color:#e5e7eb;
+    }
+    #cfx-links-settings h3 { margin: 0 0 8px 0; font-size: 15px; color:#e5e7eb; }
+    #cfx-links-settings .cfx-ln-note { font-size: 12px; color: #94a3b8; margin-bottom: 8px; }
+    #cfx-links-settings .cfx-ln-rows { display: grid; gap: 8px; }
+    #cfx-links-settings .cfx-ln-row {
+      display: grid; grid-template-columns: 1fr 1fr 140px 120px auto; gap: 6px; align-items: center;
+      border-bottom: 1px solid #1f2937; padding: 8px 0;
+    }
+    #cfx-links-settings .cfx-ln-row input[type="text"],
+    #cfx-links-settings .cfx-ln-row select {
+      width: 100%; padding: 6px 8px; font-size: 13px;
+      border: 1px solid #334155; border-radius: 6px;
+      background:#0b1220; color:#e5e7eb;
+    }
+    #cfx-links-settings .cfx-ln-row label { font-size: 12px; color:#cbd5e1; }
+    #cfx-links-settings .cfx-ln-actions > button {
+      all: unset; padding: 6px 10px; margin-left: 6px; border: 1px solid #334155;
+      background: #111827; color:#e5e7eb; border-radius: 6px; cursor: pointer; font-size: 12px;
+    }
+    #cfx-links-settings .cfx-ln-actions > button:hover { background: #1f2937; }
+    #cfx-links-settings .cfx-ln-toolbar { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }
+    #cfx-links-settings .cfx-ln-toolbar button {
+      all: unset; padding: 8px 12px; border: 1px solid #334155;
+      background: #111827; color:#e5e7eb; border-radius: 6px; cursor: pointer; font-size: 13px;
+    }
+    #cfx-links-settings .cfx-ln-toolbar button:hover { background:#1f2937; }
+
+    /* Single Export/Import editor */
+    #cfx-exim {
+      margin: 12px 0; padding: 12px; border: 1px dashed #334155;
+      border-radius: 10px; background:#0b1220; color:#e5e7eb;
+    }
+    #cfx-exim h3 { margin: 0 0 8px 0; font-size: 15px; color:#e5e7eb; }
+    #cfx-exim textarea {
+      width: 100%; min-height: 260px; resize: vertical;
+      border-radius: 8px; border:1px solid #334155;
+      background:#0a1325; color:#e5e7eb; padding:10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 12px;
+    }
+    #cfx-exim .bar { margin-top: 8px; display:flex; gap:8px; }
+    #cfx-exim .bar button {
+      all:unset; padding: 8px 12px; border:1px solid #334155; border-radius: 6px; cursor:pointer;
+      background:#111827; color:#e5e7eb;
+    }
+    #cfx-exim .bar button:hover { background:#1f2937; }
+
+    /* Toast */
+    .cfx-toast {
+      position: fixed; right: 14px; bottom: 14px; z-index: 2147483600;
+      background: #111; color: #fff; padding: 10px 12px; border-radius: 8px; opacity: .96;
+      box-shadow: 0 6px 20px rgba(0,0,0,.25); font-size: 13px;
+    }
+  `);
+
+  // ---------- tiny utils ----------
+  const $  = (sel, root = document) => (root || document).querySelector(sel);
+  const $$ = (sel, root = document) => Array.from((root || document).querySelectorAll(sel));
+  const on = (el, ev, fn, opts) => el && el.addEventListener(ev, fn, opts);
+  const toast = (msg, ms=1800) => { const t=document.createElement('div'); t.className='cfx-toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(), ms); };
+
+  // ---------- storage ----------
+  const KEY_LINKS = 'cfx.links.config';
+  const GM_Get = (k,d)=>{ try{ return GM_getValue(k,d); }catch(_){ return d; } };
+  const GM_Set = (k,v)=>{ try{ GM_setValue(k,v); }catch(_){ } };
+  const loadLinks = () => {
+    const arr = GM_Get(KEY_LINKS, []);
+    return Array.isArray(arr) ? arr.map(s => ({
+      prefix: typeof s.prefix === 'string' ? s.prefix : '',
+      suffix: typeof s.suffix === 'string' ? s.suffix : '',
+      sep: s.sep === '\\' ? '\\' : '/',
+      urlEncode: !!s.urlEncode
+    })) : [];
+  };
+  const saveLinks = (list) => GM_Set(KEY_LINKS, (list || []).map(s => ({
+    prefix: typeof s.prefix === 'string' ? s.prefix : '',
+    suffix: typeof s.suffix === 'string' ? s.suffix : '',
+    sep: s.sep === '\\' ? '\\' : '/',
+    urlEncode: !!s.urlEncode
+  })));
+
+  // ---------- data helpers ----------
+  function getRelPath(topbar){
+    const chip = topbar.querySelector('.mt-chip.mt-path');
+    if(!chip) return null;
+    const t = (chip.getAttribute('title') || chip.textContent || '').trim();
+    return t || null;
+  }
+  function fileNameFromRelPath(rel){
+    if(!rel) return null;
+    const parts = rel.split('/');
+    return parts[parts.length-1] || null;
+  }
+  function splitBaseExt(filename){
+    if (!filename) return { base:'', ext:'' };
+    const i = filename.lastIndexOf('.');
+    if (i <= 0 || i === filename.length-1) return { base: filename, ext: '' };
+    return { base: filename.slice(0,i), ext: filename.slice(i+1) };
+  }
+  function getImageAbsUrl(){
+    const img = document.getElementById('documentImage') || $('img#documentImage') || $('img[src*="image.php?hash="]');
+    if (!img) return null;
+    const src = img.getAttribute('src') || img.src || '';
+    try { return new URL(src, location.href).href; } catch { return src; }
+  }
+  function encodeSegments(path, sep) {
+    return path.split(sep).map(p => (p === '' ? '' : encodeURIComponent(p))).join(sep);
+  }
+  function applyPlaceholders(str, ctx, doEncode){
+    if (!str) return '';
+    const map = { '%filename%': ctx.filename||'', '%basename%': ctx.basename||'', '%ext%': ctx.ext||'' };
+    return String(str).replace(/%filename%|%basename%|%ext%/gi, (m) => {
+      let v = map[m.toLowerCase()] || '';
+      if (doEncode) v = encodeURIComponent(v);
+      return v;
+    });
+  }
+  function buildLink(entry, relPath) {
+    if (!entry || !relPath) return null;
+    const sep = entry.sep === '\\' ? '\\' : '/';
+    const filename = fileNameFromRelPath(relPath) || '';
+    const { base: basename, ext } = splitBaseExt(filename);
+
+    let rp = relPath;
+    if (sep === '\\') rp = rp.replace(/\//g, '\\');
+    if (entry.urlEncode) rp = encodeSegments(rp, sep);
+
+    const ctx = { filename, basename, ext, sep };
+    const prefix = applyPlaceholders(entry.prefix || '', ctx, entry.urlEncode);
+    const suffix = applyPlaceholders(entry.suffix || '', ctx, entry.urlEncode);
+
+    let out = '';
+    const prefixEndsWithSep = prefix.endsWith(sep);
+    const rpStartsWithSep = rp.startsWith(sep);
+    out = prefix ? ((prefixEndsWithSep && rpStartsWithSep) ? (prefix + rp.slice(1)) : (prefix + rp)) : rp;
+    out += suffix;
+    return out;
+  }
+
+  // ---------- dropdown (created once) ----------
+  const portal = document.createElement('div');
+  portal.className = 'cfx-ln-portal';
+  document.body.appendChild(portal);
+  const hidePortal = () => portal.classList.remove('show');
+  on(document, 'click', (e)=>{ if(portal.classList.contains('show') && !portal.contains(e.target)) hidePortal(); }, true);
+  on(document, 'keydown', (e)=>{ if(e.key==='Escape') hidePortal(); }, true);
+
+  function openMenuAt(btn, topbar){
+    const rel = getRelPath(topbar);
+    const fileName = fileNameFromRelPath(rel);
+    const imgAbs = getImageAbsUrl();
+    const cfg = loadLinks();
+
+    const items = [];
+    if (fileName) items.push({ label: fileName, onClick: () => GM_setClipboard(fileName) });
+    if (imgAbs)   items.push({ label: imgAbs, onClick: () => GM_setClipboard(imgAbs) });
+    if (rel) for (const e of cfg) {
+      const link = buildLink(e, rel);
+      if (!link) continue;
+      items.push({ label: link, onClick: () => GM_setClipboard(link) });
+    }
+
+    portal.innerHTML = '';
+    for (const it of items) {
+      const n = document.createElement('div');
+      n.className = 'cfx-ln-item';
+      n.textContent = it.label;
+      n.addEventListener('click', (ev)=>{ ev.stopPropagation(); try{ it.onClick(); }catch{} hidePortal(); }, {capture:true});
+      portal.appendChild(n);
+    }
+
+    const r = btn.getBoundingClientRect();
+    const gap = 6;
+    const top = Math.min(window.innerHeight - 12, r.bottom + gap);
+    const left = Math.min(window.innerWidth - 12, r.left);
+    portal.style.top = `${top}px`;
+    portal.style.left = `${left}px`;
+    portal.classList.add('show');
+  }
+
+  // ---------- settings JSON model ----------
+  function buildSettingsJSON(panel){
+    return {
+      version: '1',
+      ui: {
+        searchOnEnter: !!$('#cf-soe', panel)?.checked,
+        markReviewed:  !!$('#cf-mr', panel)?.checked,
+        dvReduceZoom:  !!$('#cf-dv-on', panel)?.checked,
+        dvScale:       parseInt($('#cf-dv-scale', panel)?.value || '100', 10),
+        dvOldLayout:   !!$('#cf-dv-old', panel)?.checked,
+        thumbMaxH:     parseInt($('#cf-thumbmaxh', panel)?.value || '120', 10),
+        dvHideLabels:  !!$('#cf-dv-hide-labels', panel)?.checked
+      },
+      fileLinks: ($('#cfx-links-settings')?.__data) || loadLinks()
+    };
+  }
+  function applySettingsJSON(panel, obj){
+    if (!obj || typeof obj !== 'object') return;
+    if (obj.ui) {
+      const ui = obj.ui;
+      const set = (sel, prop, transform=v=>v)=>{ const el = $(sel, panel); if(el && (prop in ui)){ const val = transform(ui[prop]); if('checked' in el) el.checked = !!val; if('value' in el) el.value = val; } };
+      set('#cf-soe', 'searchOnEnter');
+      set('#cf-mr', 'markReviewed');
+      set('#cf-dv-on', 'dvReduceZoom');
+      set('#cf-dv-scale', 'dvScale', v=>String(v));
+      set('#cf-dv-old', 'dvOldLayout');
+      set('#cf-thumbmaxh', 'thumbMaxH', v=>String(v));
+      set('#cf-dv-hide-labels', 'dvHideLabels');
+    }
+    if (Array.isArray(obj.fileLinks)) {
+      saveLinks(obj.fileLinks);
+      const sec = panel.querySelector('#cfx-links-settings');
+      if (sec) {
+        sec.__data = loadLinks();
+        if (typeof sec.__renderRows === 'function') sec.__renderRows();
+      }
+    }
+  }
+
+  // ---------- inject File Links section + single Export/Import ----------
+  function renderSettingsIntoCfPanel(panel){
+    const bd = panel.querySelector('.cf-bd');
+    if (!bd) return;
+
+    // File Links section once
+    if (!bd.querySelector('#cfx-links-settings')) {
+      const hr = document.createElement('hr');
+      hr.style.cssText = 'border:0;border-top:1px solid #374151;opacity:.6;margin:12px 0';
+      bd.appendChild(hr);
+
+      const root = document.createElement('section');
+      root.className = 'cfx-ln-embed';
+      root.id = 'cfx-links-settings';
+
+      const h3 = document.createElement('h3');
+      h3.textContent = 'File Links';
+      const note = document.createElement('div');
+      note.className = 'cfx-ln-note';
+      note.innerHTML =
+        'Each row builds link as: <code>prefix + relPath + suffix</code> (relPath from <code>.mt-chip.mt-path</code>). ' +
+        'Separator: "/" or "\\\\", optional URL-encode on path segments. ' +
+        'Placeholders in prefix/suffix: <code>%filename%</code>, <code>%basename%</code>, <code>%ext%</code>.';
+
+      const rowsWrap = document.createElement('div');
+      rowsWrap.className = 'cfx-ln-rows';
+
+      const toolbar = document.createElement('div');
+      toolbar.className = 'cfx-ln-toolbar';
+      const left = document.createElement('div');
+      toolbar.appendChild(left);
+      const btnAdd = document.createElement('button'); btnAdd.textContent = 'Add link';
+      left.appendChild(btnAdd);
+
+      root.appendChild(h3);
+      root.appendChild(note);
+      root.appendChild(rowsWrap);
+      root.appendChild(toolbar);
+      bd.appendChild(root);
+
+      root.__data = loadLinks();
+
+      function renderRows(){
+        rowsWrap.innerHTML = '';
+        root.__data.forEach((e, idx) => {
+          const row = document.createElement('div');
+          row.className = 'cfx-ln-row';
+
+          const inPrefix = document.createElement('input');
+          inPrefix.type = 'text'; inPrefix.placeholder = 'prefix (supports %filename% %basename% %ext%)'; inPrefix.value = e.prefix;
+
+          const inSuffix = document.createElement('input');
+          inSuffix.type = 'text'; inSuffix.placeholder = 'suffix (supports %filename% %basename% %ext%)'; inSuffix.value = e.suffix;
+
+          const selSep = document.createElement('select');
+          ['/', '\\'].forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s; opt.textContent = `separator: ${s}`;
+            if (e.sep === s) opt.selected = true;
+            selSep.appendChild(opt);
+          });
+
+          const labEnc = document.createElement('label');
+          const cbEnc = document.createElement('input');
+          cbEnc.type = 'checkbox'; cbEnc.checked = !!e.urlEncode;
+          labEnc.appendChild(cbEnc);
+          labEnc.append(' URL-encode');
+
+          const actions = document.createElement('div');
+          actions.className = 'cfx-ln-actions';
+          const up   = document.createElement('button'); up.textContent = 'Up';
+          const down = document.createElement('button'); down.textContent = 'Down';
+          const del  = document.createElement('button'); del.textContent = 'Delete';
+
+          on(up,   'click', ()=>{ if (idx <= 0) return; const t = root.__data[idx-1]; root.__data[idx-1]=root.__data[idx]; root.__data[idx]=t; renderRows(); });
+          on(down, 'click', ()=>{ if (idx >= root.__data.length-1) return; const t = root.__data[idx+1]; root.__data[idx+1]=root.__data[idx]; root.__data[idx]=t; renderRows(); });
+          on(del,  'click', ()=>{ root.__data.splice(idx,1); renderRows(); });
+
+          on(inPrefix, 'input', ()=> e.prefix = inPrefix.value);
+          on(inSuffix, 'input', ()=> e.suffix = inSuffix.value);
+          on(selSep,   'change',()=> e.sep    = selSep.value);
+          on(cbEnc,    'change',()=> e.urlEncode = !!cbEnc.checked);
+
+          actions.appendChild(up); actions.appendChild(down); actions.appendChild(del);
+
+          row.appendChild(inPrefix);
+          row.appendChild(inSuffix);
+          row.appendChild(selSep);
+          row.appendChild(labEnc);
+          row.appendChild(actions);
+          rowsWrap.appendChild(row);
+        });
+      }
+
+      on(btnAdd,'click', ()=>{ root.__data.push({ prefix:'', suffix:'', sep:'/', urlEncode:false }); renderRows(); });
+      root.__renderRows = renderRows;
+      renderRows();
+
+      // Hook main Save (persist fileLinks to storage)
+      const saveBtn = panel.querySelector('#cf-save');
+      if (saveBtn && !saveBtn.dataset.cfxWired) {
+        saveBtn.dataset.cfxWired = '1';
+        saveBtn.addEventListener('click', () => {
+          const sec = panel.querySelector('#cfx-links-settings');
+          if (sec && sec.__data) saveLinks(sec.__data);
+        }, { capture:true });
+      }
+    }
+
+    // Single Export/Import button (create once)
+    const actions = panel.querySelector('.cf-actions');
+    if (actions && !actions.querySelector('#cf-exim')) {
+      const oldEx = actions.querySelector('#cf-export'); if (oldEx) oldEx.style.display = 'none';
+      const oldIm = actions.querySelector('#cf-import'); if (oldIm) oldIm.style.display = 'none';
+
+      const eximBtn = document.createElement('button');
+      eximBtn.className = 'cf-btn subtle';
+      eximBtn.id = 'cf-exim';
+      eximBtn.textContent = 'Export/Import';
+      actions.insertBefore(eximBtn, actions.querySelector('#cf-cancel') || actions.firstChild);
+
+      eximBtn.addEventListener('click', () => openExImEditor(panel), { capture:true });
+    }
+  }
+
+  // ---------- Export/Import textarea ----------
+  function openExImEditor(panel){
+    const bd = panel.querySelector('.cf-bd');
+    if (!bd) return;
+    let exim = bd.querySelector('#cfx-exim');
+    if (!exim) {
+      exim = document.createElement('section');
+      exim.id = 'cfx-exim';
+      exim.innerHTML = `
+        <h3>Export / Import settings (JSON)</h3>
+        <div class="cfx-ln-note">Copy the JSON below to save. To import, paste your JSON and press <b>Apply</b>. Then click panel <b>Save</b> to persist.</div>
+        <textarea id="cfx-exim-ta" spellcheck="false"></textarea>
+        <div class="bar">
+          <button id="cfx-exim-refresh">Refresh JSON</button>
+          <button id="cfx-exim-apply">Apply</button>
+          <button id="cfx-exim-close">Close</button>
+        </div>
+      `;
+      bd.appendChild(exim);
+
+      const ta = $('#cfx-exim-ta', exim);
+      const btnRefresh = $('#cfx-exim-refresh', exim);
+      const btnApply   = $('#cfx-exim-apply', exim);
+      const btnClose   = $('#cfx-exim-close', exim);
+
+      const fill = ()=> ta.value = JSON.stringify(buildSettingsJSON(panel), null, 2);
+
+      btnRefresh.addEventListener('click', ()=>{ fill(); toast('JSON refreshed'); });
+      btnApply.addEventListener('click', ()=>{
+        try{
+          const obj = JSON.parse(ta.value || '{}');
+          applySettingsJSON(panel, obj);
+          toast('JSON applied — click Save');
+        }catch(e){
+          console.error(e);
+          toast('Invalid JSON');
+        }
+      });
+      btnClose.addEventListener('click', ()=>{ exim.remove(); });
+
+      fill();
+    } else {
+      exim.remove();
+    }
+  }
+
+  // ---------- observe panel open and inject ----------
+  const panelObserver = new MutationObserver(() => {
+    document.querySelectorAll('.cf-panel.open').forEach(renderSettingsIntoCfPanel);
+  });
+  panelObserver.observe(document.body, { childList:true, subtree:true });
+
+  // also try if already open
+  document.querySelectorAll('.cf-panel.open').forEach(renderSettingsIntoCfPanel);
+
+  // hook gear click to probe for panel shortly after open
+  const gear = document.querySelector('.cf-gear.br');
+  if (gear) {
+    gear.addEventListener('click', () => {
+      const tEnd = Date.now() + 2000;
+      (function probe(){
+        const panel = document.querySelector('.cf-panel.open');
+        if (panel) renderSettingsIntoCfPanel(panel);
+        else if (Date.now() < tEnd) requestAnimationFrame(probe);
+      })();
+    }, { capture:true });
+  }
+
+  // ---------- "Links" button in modal topbar ----------
+  function matchCloseMetrics(topbar, btn){
+    const close = topbar.querySelector('.mt-chip.mt-close, .mt-close, button.mt-close');
+    if(!close) return;
+    const cs = getComputedStyle(close);
+    btn.style.borderRadius = cs.borderRadius;
+    btn.style.padding = cs.padding;
+    btn.style.fontSize = cs.fontSize;
+    btn.style.lineHeight = cs.lineHeight;
+    btn.style.fontFamily = cs.fontFamily;
+    btn.style.height = cs.height;
+  }
+
+  function ensureLinksButton(topbar){
+    if (!topbar) return;
+    const pathChip = topbar.querySelector('.mt-chip.mt-path');
+    if (!pathChip) return;
+
+    let wrap = topbar.querySelector('.cfx-ln-wrap');
+    if (!wrap) {
+      wrap = document.createElement('span');
+      wrap.className = 'cfx-ln-wrap';
+      pathChip.parentNode.insertBefore(wrap, pathChip);
+    }
+
+    let lnBtn = wrap.querySelector('.cfx-ln-btn');
+    if (!lnBtn) {
+      lnBtn = document.createElement('button');
+      lnBtn.className = 'mt-chip cfx-ln-btn';
+      lnBtn.type = 'button';
+      lnBtn.innerHTML = '<span>Links</span>';
+      wrap.appendChild(lnBtn);
+
+      matchCloseMetrics(topbar, lnBtn);
+
+      lnBtn.addEventListener('mousedown', (e)=>e.stopPropagation(), true);
+      lnBtn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        if (portal.classList.contains('show')) portal.classList.remove('show');
+        else openMenuAt(lnBtn, topbar);
+      }, {capture:true});
+    }
+  }
+
+  function scanTopbars(){ $$('.mt-topbar').forEach(ensureLinksButton); }
+  const mo = new MutationObserver(()=>scanTopbars());
+  mo.observe(document.body, { childList:true, subtree:true });
+  setInterval(scanTopbars, 1500);
+  scanTopbars();
 })();
