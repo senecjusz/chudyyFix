@@ -77,9 +77,8 @@ else
 fi
 
 # Safety: ensure remote main did not advance since pull
-AHEAD_BEHIND="$(git rev-list --left-right --count "$REMOTE/$MAIN_BRANCH...$MAIN_BRANCH")"
-LEFT="${AHEAD_BEHIND%% *}"     # commits remote has that local does not
-if [[ "$LEFT" -ne 0 ]]; then
+read -r LEFT RIGHT < <(git rev-list --left-right --count "$REMOTE/$MAIN_BRANCH...$MAIN_BRANCH")
+if (( LEFT != 0 )); then
   echo "[ERROR] $MAIN_BRANCH is behind $REMOTE/$MAIN_BRANCH by $LEFT commit(s)."
   echo "        Someone pushed new commits to remote. Resolve locally, then rerun."
   exit 3
